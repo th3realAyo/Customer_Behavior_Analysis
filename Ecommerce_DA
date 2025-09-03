@@ -1,0 +1,407 @@
+CREATE DATABASE Ecommerce_Portfolio;
+GO
+
+USE Ecommerce_Portfolio;
+GO
+
+ALTER TABLE [Ecommerce_Portfolio].[dbo].[E-commerce_Customer_Data]
+DROP COLUMN Age;
+
+
+ALTER TABLE [Ecommerce_Portfolio].[dbo].[E-commerce_Customer_Data]
+ADD TotalRevenue AS (Quantity * Product_Price);
+
+ /*
+1. Customer Analysis
+- Unique Customers → How many total? How many new vs returning?
+- Demographics → Age groups & Gender distribution.
+- Churn → Use your Churn column to measure churn rate.
+- Retention → From Customer ID + purchase_month.
+- High-value customers → Top spenders (based on Total Purchase Amount).
+*/
+
+-- Key Performance Indicators
+SELECT COUNT(DISTINCT Customer_ID) TotalUniqueCustomers
+FROM [E-commerce_Customer_Data]
+
+SELECT
+	SUM(Total_Purchase_Amount) TotalPurchaseAmount
+FROM [E-commerce_Customer_Data]
+
+SELECT SUM(Quantity) TotalQuantitySold
+FROM [E-commerce_Customer_Data]
+
+SELECT AVG(Quantity) AvgQuantitySold
+FROM [E-commerce_Customer_Data]
+
+SELECT Quantity * Product_Price TotalRevenue
+FROM [E-commerce_Customer_Data]
+
+
+-- Unique Customers → How many total? How many new vs returning?
+SELECT 
+		COUNT(DISTINCT Customer_ID) Unique_Customers
+FROM [E-commerce_Customer_Data]
+
+
+SELECT 
+    COUNT(DISTINCT Customer_ID) AS Total_Customers,
+    COUNT(DISTINCT CASE WHEN purchase_count = 1 THEN Customer_ID END) AS New_Customers,
+    COUNT(DISTINCT CASE WHEN purchase_count > 1 THEN Customer_ID END) AS Returning_Customers
+FROM (
+    SELECT 
+        Customer_ID,
+        COUNT(*) AS purchase_count
+    FROM [E-commerce_Customer_Data]
+    GROUP BY Customer_ID
+) t;
+
+
+ -- Demographics → Age groups & Gender distribution.
+SELECT 
+	COUNT(Customer_ID) AS CustomerID,
+	CASE 
+		WHEN Customer_Age BETWEEN 18 AND 24 THEN 'Youth' 
+		WHEN Customer_Age BETWEEN 25 AND 50 THEN 'Adult'
+		WHEN Customer_Age BETWEEN 51 AND 70 THEN 'Seniors'
+	END Age_Group,
+	Gender
+FROM [E-commerce_Customer_Data]
+GROUP BY 
+		Gender,
+		CASE 
+			WHEN Customer_Age BETWEEN 18 AND 24 THEN 'Youth' 
+			WHEN Customer_Age BETWEEN 25 AND 50 THEN 'Adult'
+			WHEN Customer_Age BETWEEN 51 AND 70 THEN 'Seniors'
+		END
+ORDER BY Age_Group ASC;
+
+
+-- Churn → Use your Churn column to measure churn rate.
+SELECT
+	COUNT(DISTINCT CASE WHEN Churn = 1 THEN Customer_ID END) UniqueChurnedCustomers,
+	COUNT(DISTINCT Customer_ID) UniqueCustomers,
+	ROUND(
+			(COUNT(DISTINCT CASE WHEN Churn = 1 THEN Customer_ID END) * 1.0 /
+			  COUNT(DISTINCT Customer_ID)), 2) AS ChurnRate
+FROM [E-commerce_Customer_Data] 
+WHERE YEAR(Purchase_Date) BETWEEN 2020 AND 2024;
+
+
+-- Retention → From Customer ID + purchase_month.
+WITH customer_months AS (
+    SELECT DISTINCT
+        Customer_ID,
+        FORMAT(Purchase_Date, 'yyyy-MM') AS PurchaseMonth
+    FROM [E-commerce_Customer_Data]
+),
+retention AS (
+    SELECT 
+        this.PurchaseMonth,
+        COUNT(DISTINCT this.Customer_ID) AS Active_Customers,
+        COUNT(DISTINCT CASE WHEN next.Customer_ID IS NOT NULL THEN this.Customer_ID END) AS Retained_Customers
+    FROM customer_months this
+    LEFT JOIN customer_months next
+        ON this.Customer_ID = next.Customer_ID
+       AND DATEADD(MONTH, 1, CAST(this.PurchaseMonth + '-01' AS date)) = CAST(next.PurchaseMonth + '-01' AS date)
+    GROUP BY this.PurchaseMonth
+)
+SELECT 
+    PurchaseMonth,
+    Active_Customers,
+    Retained_Customers,
+    ROUND(1.0 * Retained_Customers / Active_Customers, 2) AS RetentionRate
+FROM retention
+ORDER BY PurchaseMonth;
+
+
+-- High-value customers → Top spenders (based on Total Purchase Amount).
+SELECT
+		TOP 5
+		Customer_ID,
+		Customer_Name,
+		COALESCE(SUM(Total_Purchase_Amount), 0) AS TotalPurchaseAmount
+FROM	[E-commerce_Customer_Data]
+GROUP BY Customer_Name, Customer_ID
+ORDER BY TotalPurchaseAmount DESC;
+
+/*
+2. Product Analysis
+- Category performance → Which Product Category sells the most (volume & revenue)?
+- Profitability → Based on Product Price × Quantity.
+- Returns → Which products/categories have high return rates?
+- Basket size → Avg. Quantity per purchase.
+*/
+
+-- Category performance → Which Product Category sells the most (volume & revenue)?
+SELECT
+		Product_Category,
+		COALESCE(SUM(Product_Price * Quantity), 0) As ProductRevenue
+FROM [E-commerce_Customer_Data]		
+GROUP BY Product_Category
+ORDER BY ProductRevenue;
+
+-- Profitability → Based on Product Price × Quantity.
+SELECT
+		SUM(Product_Price * Quantity) TotalProfit
+FROM	[E-commerce_Customer_Data]
+
+
+-- Returns → Which products/categories have high return rates?
+SELECT
+		Product_Category,
+		ROUND(
+				COUNT(DISTINCT CASE WHEN Returns = 1 THEN Customer_ID END) * 1.0 / COUNT(DISTINCT Customer_ID), 2) AS ReturnRate
+FROM [E-commerce_Customer_Data]	
+GROUP BY Product_Category
+ORDER BY ReturnRate
+
+
+-- Basket size → Avg. Quantity per purchase.
+SELECT
+		ROUND(SUM(Quantity) * 1.0 / COUNT(Quantity), 2) BasketSize
+FROM [E-commerce_Customer_Data]
+
+
+/*
+3. Sales & Revenue Trends
+- By time → Sales by purchase_date, purchase_month, purchase_time.
+- Seasonality → Peaks (e.g., weekends, holidays, end of month).
+- Average Order Value (AOV) → Total Purchase Amount ÷ number of purchases.
+- Revenue per customer → Total spend per Customer ID.
+*/
+
+-- By time → Sales by purchase_date, purchase_month, purchase_time.
+SELECT
+		SUM(TotalRevenue) TotalRevenue,
+		YEAR(Purchase_Date) PurchaseYear
+FROM [E-commerce_Customer_Data]
+GROUP BY YEAR(Purchase_Date)
+ORDER BY PurchaseYear;
+
+SELECT
+		SUM(TotalRevenue) TotalRevenue,
+		DATENAME(MONTH, Purchase_Date) PurchaseMonth,
+		YEAR(Purchase_Date) PurchaseYear
+FROM [E-commerce_Customer_Data]
+GROUP BY DATENAME(MONTH, Purchase_Date), YEAR(Purchase_Date)
+ORDER BY YEAR(Purchase_Date) ASC;
+
+
+SELECT
+		SUM(TotalRevenue) TotalRevenue,
+		FORMAT(Purchase_Date, 'hh tt')  PurchaseTime
+FROM [E-commerce_Customer_Data]
+GROUP BY FORMAT(Purchase_Date, 'hh tt')
+ORDER BY TotalRevenue;
+
+
+-- Average Order Value (AOV) → Total Purchase Amount ÷ number of purchases.
+SELECT 
+		ROUND(
+				SUM(Total_Purchase_Amount) * 1.0 / COUNT(Quantity),
+			2) as AOV
+FROM [E-commerce_Customer_Data]
+
+-- Revenue per customer → Total spend per Customer ID.
+SELECT
+		DISTINCT 
+		Customer_ID,
+		Customer_Name,
+		SUM(Total_Purchase_Amount) RPC
+FROM [E-commerce_Customer_Data]
+GROUP BY Customer_ID, Customer_Name
+ORDER BY RPC;
+
+
+/*
+4. Payment & Operations
+- Payment methods → Which Payment Method is most popular?
+- Failed/cancelled orders → Use Returns column to see impact on revenue.
+- Fulfillment issues → High return rates could hint at product or delivery problems.
+*/
+
+-- Payment methods → Which Payment Method is most popular?
+SELECT
+		COUNT(*) TransactionCount,
+		Payment_Method
+FROM [E-commerce_Customer_Data]
+GROUP BY Payment_Method
+ORDER BY TransactionCount DESC;
+
+
+-- Failed/cancelled orders → Use Returns column to see impact on revenue.
+SELECT
+    SUM(CASE WHEN Returns = 1 THEN Total_Purchase_Amount ELSE 0 END) AS ReturnedRevenue,
+    SUM(Total_Purchase_Amount) AS TotalRevenue,
+    ROUND(
+        SUM(CASE WHEN Returns = 1 THEN Total_Purchase_Amount ELSE 0 END) * 1.0 /
+        SUM(Total_Purchase_Amount), 2
+    ) AS ReturnImpactPercent
+FROM [E-commerce_Customer_Data];
+
+
+-- Fulfillment issues → High return rates could hint at product or delivery problems.
+SELECT
+		Product_Category,
+		ROUND(COUNT(CASE WHEN Returns = 1 THEN Customer_ID END) *100.0 / COUNT(Customer_ID), 2) ReturnPercentagebyProductCategory
+FROM [E-commerce_Customer_Data]
+GROUP BY Product_Category
+ORDER BY ReturnPercentagebyProductCategory DESC;
+
+
+SELECT
+		Payment_Method,
+		ROUND(COUNT(CASE WHEN Returns = 1 THEN Customer_ID END) *1.0 / COUNT(Customer_ID), 2) ReturnPercentagebyPaymentMethod
+FROM [E-commerce_Customer_Data]
+GROUP BY Payment_Method
+ORDER BY ReturnPercentagebyPaymentMethod DESC;
+
+
+SELECT
+		Gender,
+		ROUND(COUNT(CASE WHEN Returns = 1 THEN Customer_ID END) *1.0 / COUNT(Customer_ID), 2) ReturnPercentagebyGender
+FROM [E-commerce_Customer_Data]
+GROUP BY Gender
+ORDER BY ReturnPercentagebyGender DESC;
+
+SELECT
+		CASE 
+			WHEN Customer_Age BETWEEN 18 AND 24 THEN 'Youth' 
+			WHEN Customer_Age BETWEEN 25 AND 50 THEN 'Adult'
+			WHEN Customer_Age BETWEEN 51 AND 70 THEN 'Seniors'
+		END Age_Group,
+		ROUND(COUNT(CASE WHEN Returns = 1 THEN Customer_ID END) *100.0 / COUNT(Customer_ID), 2) ReturnPercentagebyAgeGroup				
+FROM [E-commerce_Customer_Data]
+GROUP BY 
+		CASE 
+			WHEN Customer_Age BETWEEN 18 AND 24 THEN 'Youth' 
+			WHEN Customer_Age BETWEEN 25 AND 50 THEN 'Adult'
+			WHEN Customer_Age BETWEEN 51 AND 70 THEN 'Seniors'
+		END
+ORDER BY ReturnPercentagebyAgeGroup DESC;
+
+SELECT
+		(
+			CASE 
+				WHEN (DATEPART(QUARTER, Purchase_Date) = 1) THEN 'January-March' 
+				WHEN (DATEPART(QUARTER, Purchase_Date) = 2) THEN 'April-June'
+				WHEN (DATEPART(QUARTER, Purchase_Date) = 3) THEN 'July-September'
+				WHEN (DATEPART(QUARTER, Purchase_Date) = 4) THEN 'October-December'
+			END 
+		) QtrSeries,
+		DATEPART(QUARTER, Purchase_Date) Quater,
+		ROUND(COUNT(CASE WHEN Returns = 1 THEN Customer_ID END) *1.0 / COUNT(Customer_ID), 2) ReturnPercentagebyQuater
+FROM [E-commerce_Customer_Data]
+GROUP BY DATEPART(QUARTER, Purchase_Date)
+ORDER BY Quater ASC;
+
+
+/* 5. Churn & Retention
+- Retention Rate → Customers coming back month to month.
+- Cohorts → Track purchase_month to see how long customers stay active.
+*/
+
+-- Retention Rate → Customers coming back month to month.
+--Option 1
+--WITH CustomerMonths AS (
+--    SELECT DISTINCT
+--        Customer_ID,
+--        YEAR(Purchase_Date) AS PurchaseYear,
+--        MONTH(Purchase_Date) AS PurchaseMonth
+--    FROM [E-commerce_Customer_Data]
+--)
+--SELECT
+--    cm.PurchaseYear,
+--    cm.PurchaseMonth,
+--    COUNT(DISTINCT cm.Customer_ID) AS CustomersInMonth,
+--    COUNT(DISTINCT cm2.Customer_ID) AS ReturningCustomers,
+--    ROUND(
+--        COUNT(DISTINCT cm2.Customer_ID) * 100.0 /
+--        COUNT(DISTINCT cm.Customer_ID), 
+--        2
+--    ) AS RetentionRate
+--FROM CustomerMonths cm
+--LEFT JOIN CustomerMonths cm2
+--    ON cm.Customer_ID = cm2.Customer_ID
+--   AND (
+--        cm2.PurchaseYear * 12 + cm2.PurchaseMonth
+--        = cm.PurchaseYear * 12 + cm.PurchaseMonth + 1
+--       ) -- next month
+--GROUP BY cm.PurchaseYear, cm.PurchaseMonth
+--ORDER BY cm.PurchaseYear, cm.PurchaseMonth;
+
+
+--Option 2
+SELECT
+    this.PurchaseYear,
+    this.PurchaseMonth,
+    COUNT(DISTINCT this.Customer_ID) AS CustomersInMonth,
+    COUNT(DISTINCT next.Customer_ID) AS ReturningCustomers,
+    ROUND(
+        COUNT(DISTINCT next.Customer_ID) * 1.0 / 
+        COUNT(DISTINCT this.Customer_ID), 
+        2
+    ) AS RetentionRate
+FROM (
+    SELECT Customer_ID, YEAR(Purchase_Date) AS PurchaseYear, MONTH(Purchase_Date) AS PurchaseMonth
+    FROM [E-commerce_Customer_Data]
+    GROUP BY Customer_ID, YEAR(Purchase_Date), MONTH(Purchase_Date)
+) this
+LEFT JOIN (
+    SELECT Customer_ID, YEAR(Purchase_Date) AS PurchaseYear, MONTH(Purchase_Date) AS PurchaseMonth
+    FROM [E-commerce_Customer_Data]
+    GROUP BY Customer_ID, YEAR(Purchase_Date), MONTH(Purchase_Date)
+) next
+  ON this.Customer_ID = next.Customer_ID
+  AND (next.PurchaseYear * 12 + next.PurchaseMonth = this.PurchaseYear * 12 + this.PurchaseMonth + 1)
+GROUP BY this.PurchaseYear, this.PurchaseMonth
+ORDER BY this.PurchaseYear, this.PurchaseMonth;
+
+
+-- Cohorts → Track purchase_month to see how long customers stay active.
+WITH FirstPurchase AS (
+    SELECT 
+        Customer_ID,
+        MIN(DATEFROMPARTS(YEAR(Purchase_Date), MONTH(Purchase_Date), 1)) AS CohortMonth
+    FROM [E-commerce_Customer_Data]
+    GROUP BY Customer_ID
+),
+CohortActivity AS (
+    SELECT 
+        f.Customer_ID,
+        f.CohortMonth,
+        DATEFROMPARTS(YEAR(e.Purchase_Date), MONTH(e.Purchase_Date), 1) AS ActivityMonth
+    FROM [E-commerce_Customer_Data] e
+    JOIN FirstPurchase f
+        ON e.Customer_ID = f.Customer_ID
+)
+SELECT 
+    CohortMonth,
+    DATEDIFF(MONTH, CohortMonth, ActivityMonth) AS MonthsSinceFirstPurchase,
+    COUNT(DISTINCT Customer_ID) AS ActiveCustomers
+FROM CohortActivity
+GROUP BY CohortMonth, DATEDIFF(MONTH, CohortMonth, ActivityMonth)
+ORDER BY CohortMonth, MonthsSinceFirstPurchase;
+
+
+/*6. Fraud/Anomalies
+- Unusual purchase amounts → Very high/low Total Purchase Amount.
+*/
+
+-- Unusual purchase amounts → Very high/low Total Purchase Amount.
+WITH Stats AS (
+    SELECT 
+        AVG(Total_Purchase_Amount) AS AvgAmount,
+        STDEV(Total_Purchase_Amount) AS StdDevAmount
+    FROM [E-commerce_Customer_Data]
+)
+SELECT 
+    e.Customer_ID,
+    e.Customer_Name,
+    e.Total_Purchase_Amount
+FROM [E-commerce_Customer_Data] e
+CROSS JOIN Stats s
+WHERE e.Total_Purchase_Amount > s.AvgAmount + 3 * s.StdDevAmount
+   OR e.Total_Purchase_Amount < s.AvgAmount - 3 * s.StdDevAmount
+ORDER BY e.Total_Purchase_Amount DESC;
