@@ -43,18 +43,29 @@ SELECT
 		COUNT(DISTINCT Customer_ID) Unique_Customers
 FROM [E-commerce_Customer_Data]
 
+SELECT
+	Product_Category
+FROM [E-commerce_Customer_Data]
 
-SELECT 
+SELECT
+	Product_Category,
+	COUNT(DISTINCT Customer_ID) ChurnedCustomers,
+	SUM(CASE WHEN Returns = 1 THEN 1 ELSE 0 END),
+	ROUND(1.0 * SUM(CASE WHEN Returns = 1 THEN 1 ELSE 0 END) / COUNT(*), 2) AS ReturnRateAmongChurned,
     COUNT(DISTINCT Customer_ID) AS Total_Customers,
     COUNT(DISTINCT CASE WHEN purchase_count = 1 THEN Customer_ID END) AS New_Customers,
     COUNT(DISTINCT CASE WHEN purchase_count > 1 THEN Customer_ID END) AS Returning_Customers
-FROM (
-    SELECT 
-        Customer_ID,
-        COUNT(*) AS purchase_count
-    FROM [E-commerce_Customer_Data]
-    GROUP BY Customer_ID
-) t;
+FROM 
+	(
+		SELECT
+			Returns,
+			customer_id,
+			Product_category,
+			COUNT(*) purchase_count
+		FROM [E-commerce_Customer_Data]
+		GROUP BY Customer_ID, Product_Category
+	) t;
+
 
 
  -- Demographics → Age groups & Gender distribution.
